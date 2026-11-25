@@ -40,11 +40,23 @@ All content lives in `src/data/` — components never hard-code it.
 Entries marked `isSample: true` show a small **Sample** tag — replace them with real content and remove the flag.
 Your portrait lives in `public/images/` (`profile.webp` and `profile-480.webp`).
 
-## Contact form
+## Contact form (EmailJS)
 
-Copy `.env.example` to `.env` and set `VITE_CONTACT_ENDPOINT` to any endpoint that accepts a JSON
-`POST` of `{ name, email, subject, message }` (e.g. a Formspree form URL). Without it, the form
-validates and opens the visitor's email app with the message pre-filled.
+Messages are delivered with [EmailJS](https://www.emailjs.com) — no backend needed.
+
+1. Create a free EmailJS account and **add an email service** (e.g. Gmail) → copy the **Service ID**.
+2. **Create an email template** and use these variables in it:
+   - Subject: `New portfolio message: {{subject}}`
+   - Body: `{{message}}` … `From: {{from_name}} <{{from_email}}>` … `Sent: {{sent_at}}`
+   - Settings → **Reply To**: `{{reply_to}}` (so replying goes straight to the sender)
+   - Copy the **Template ID**.
+3. Account → General → copy your **Public Key**.
+4. Copy `.env.example` to `.env` and fill in the three values, then restart `npm run dev`.
+5. When deploying (Vercel/Netlify), add the same three variables in the host's environment settings.
+
+Recommended in the EmailJS dashboard: Account → Security → restrict requests to your site's domain.
+Without these variables the form still validates and opens the visitor's email app with the message pre-filled.
+The form also includes a hidden honeypot field and a 15-second per-browser rate limit against spam.
 
 ## Project structure
 

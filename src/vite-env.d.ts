@@ -1,12 +1,12 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  /**
-   * Optional form endpoint that accepts a JSON POST (e.g. a Formspree form URL,
-   * a Web3Forms-style API, or your own serverless function).
-   * When unset, the contact form validates and hands off to the visitor's email app instead.
-   */
-  readonly VITE_CONTACT_ENDPOINT?: string
+  /** EmailJS → Email Services → Service ID (e.g. "service_xxxxxxx") */
+  readonly VITE_EMAILJS_SERVICE_ID?: string
+  /** EmailJS → Email Templates → Template ID (e.g. "template_xxxxxxx") */
+  readonly VITE_EMAILJS_TEMPLATE_ID?: string
+  /** EmailJS → Account → General → Public Key */
+  readonly VITE_EMAILJS_PUBLIC_KEY?: string
 }
 
 interface ImportMeta {

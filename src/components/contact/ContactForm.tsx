@@ -3,6 +3,7 @@ import { useState, type ChangeEvent, type FormEvent } from 'react'
 import { LuCircleAlert, LuCheck, LuLoader, LuSend } from 'react-icons/lu'
 import { personal } from '../../data/personal'
 import { cn } from '../../utils'
+import { isEmailConfigured, sendContactEmail } from '../../utils/email'
 
 type Fields = { name: string; email: string; subject: string; message: string }
 type Errors = Partial<Record<keyof Fields, string>>
@@ -13,7 +14,6 @@ type Status =
   | { kind: 'handoff' }
   | { kind: 'error'; message: string }
 
-const endpoint = import.meta.env.VITE_CONTACT_ENDPOINT?.trim()
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 
 function validate(f: Fields): Errors {
@@ -88,13 +88,15 @@ function Field({
 
 /**
  * Contact form with validation and honest delivery:
- *  - VITE_CONTACT_ENDPOINT set → POSTs JSON and reports real success/failure.
- *  - not set → validates, then opens the visitor's email app with everything pre-filled.
+ *  - EmailJS configured → sends through EmailJS and reports real success/failure.
+ *  - not configured → validates, then opens the visitor's email app with everything pre-filled.
+ * A hidden honeypot field silently drops most form-filling bots.
  */
 export function ContactForm() {
   const [fields, setFields] = useState<Fields>(empty)
   const [errors, setErrors] = useState<Errors>({})
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
+  const [honeypot, setHoneypot] = useState('')
 
   const update = (key: keyof Fields) => (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFields((f) => ({ ...f, [key]: e.target.value }))
@@ -110,7 +112,15 @@ export function ContactForm() {
       return
     }
 
-    if (!endpoint) {
+    if (honeypot) {
+      // Bot filled the hidden field: pretend success, send nothing.
+      if (import.meta.env.DEV) console.warn('[contact] honeypot field was filled — message NOT sent:', JSON.stringify(honeypot))
+      setStatus({ kind: 'sent' })
+      setFields(empty)
+      return
+    }
+
+    if (!isEmailConfigured) {
       window.location.href = mailtoHref(fields)
       setStatus({ kind: 'handoff' })
       return
@@ -118,15 +128,17 @@ export function ContactForm() {
 
     setStatus({ kind: 'sending' })
     try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(fields),
+      await sendContactEmail({
+        name: fields.name.trim(),
+        email: fields.email.trim(),
+        subject: fields.subject.trim(),
+        message: fields.message.trim(),
       })
-      if (!res.ok) throw new Error(`Request failed (${res.status})`)
+      if (import.meta.env.DEV) console.info('[contact] EmailJS accepted the message')
       setStatus({ kind: 'sent' })
       setFields(empty)
     } catch (err) {
+      if (import.meta.env.DEV) console.error('[contact] EmailJS send failed:', err)
       setStatus({ kind: 'error', message: err instanceof Error ? err.message : 'Something went wrong.' })
     }
   }
@@ -135,6 +147,25 @@ export function ContactForm() {
 
   return (
     <form onSubmit={onSubmit} noValidate className="glass relative rounded-[28px] p-5 md:p-8" aria-label="Contact form">
+      {/* Honeypot: invisible to people and screen readers, tempting to bots.
+          Its name/label deliberately match no autofill category (e.g. "company"), otherwise the
+          browser autofills it for real visitors and their message is silently discarded. */}
+      <div aria-hidden className="absolute -left-[9999px] size-px overflow-hidden">
+        <label htmlFor="hp-trap">Leave this field empty</label>
+        <input
+          id="hp-trap"
+          name="hp_trap_field"
+          type="text"
+          tabIndex={-1}
+          autoComplete="off"
+          data-lpignore="true"
+          data-1p-ignore="true"
+          data-form-type="other"
+          value={honeypot}
+          onChange={(e) => setHoneypot(e.target.value)}
+        />
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-2">
         <Field id="name" label="Your name" autoComplete="name" value={fields.name} onChange={update('name')} error={errors.name} />
         <Field id="email" label="Email address" type="email" autoComplete="email" value={fields.email} onChange={update('email')} error={errors.email} />
@@ -146,14 +177,14 @@ export function ContactForm() {
 
       <div className="mt-6 flex flex-col-reverse items-start justify-between gap-4 sm:flex-row sm:items-center">
         <p className="max-w-xs text-xs leading-relaxed text-subtle">
-          {endpoint ? 'Your message is delivered directly to my inbox.' : 'Submitting opens your email app with the message ready to send.'}
+          {isEmailConfigured ? 'Your message is delivered straight to my inbox.' : 'Submitting opens your email app with the message ready to send.'}
         </p>
         <button
           type="submit"
           disabled={sending}
           className="group inline-flex h-13 items-center gap-3 rounded-full bg-lime pl-6 pr-5 text-sm font-semibold text-on-lime transition-all hover:brightness-110 disabled:cursor-wait disabled:opacity-70"
         >
-          {sending ? 'Sending…' : endpoint ? 'Send message' : 'Send via email app'}
+          {sending ? 'Sending…' : isEmailConfigured ? 'Send message' : 'Send via email app'}
           {sending ? <LuLoader className="size-4 animate-spin" /> : <LuSend className="size-4 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />}
         </button>
       </div>
@@ -181,7 +212,7 @@ export function ContactForm() {
             <motion.p key="error" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mt-5 flex items-start gap-2 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">
               <LuCircleAlert className="mt-0.5 size-4 shrink-0" />
               <span>
-                The message couldn't be sent ({status.message}). Please try again, or email{' '}
+                The message couldn't be sent: {status.message} Please try again, or email{' '}
                 <a href={`mailto:${personal.email}`} className="underline underline-offset-4">
                   {personal.email}
                 </a>
